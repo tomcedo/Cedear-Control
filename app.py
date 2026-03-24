@@ -20,7 +20,7 @@ precios_ars = {
     "BBD":     310,
     "GOOGL": 20_800,
     "MSFT":  17_200,
-    "NU":     2_450,
+    "NU":     7_450,
     "NVDA":  46_000,
     "PBR":    1_850,
     "VALE":   1_620,
@@ -194,12 +194,28 @@ with col1:
         df_principal,
         names="Ticker",
         values="Valor USD",
-        title="Distribución por ticker (USD)",
+        title="Distribution by ticker (USD)",
         hole=0.3,
     )
     fig_torta.update_traces(textinfo="percent+label")
     fig_torta.update_layout(showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
     st.plotly_chart(fig_torta, use_container_width=True)
+
+    # Gráfico de barras horizontal — peso porcentual
+    df_ppal_pct = df_principal.copy()
+    df_ppal_pct["Weight (%)"] = df_ppal_pct["Valor USD"] / total_principal * 100
+    df_ppal_pct = df_ppal_pct.sort_values("Weight (%)")
+    fig_barras_ppal = px.bar(
+        df_ppal_pct,
+        x="Weight (%)",
+        y="Ticker",
+        orientation="h",
+        title="Portfolio weight (%)",
+        text=df_ppal_pct["Weight (%)"].apply(lambda x: f"{x:.1f}%"),
+    )
+    fig_barras_ppal.update_traces(textposition="outside")
+    fig_barras_ppal.update_layout(margin=dict(t=40, b=0, l=0, r=40), xaxis_title="", yaxis_title="")
+    st.plotly_chart(fig_barras_ppal, use_container_width=True)
 
 with col2:
     st.subheader("Portfolio Secundario")
@@ -209,5 +225,21 @@ with col2:
         hide_index=True,
     )
     st.metric("Total USD", f"${total_secundario:,.2f}")
+
+    # Gráfico de barras horizontal — peso porcentual
+    df_sec_pct = df_secundario.copy()
+    df_sec_pct["Weight (%)"] = df_sec_pct["Valor USD"] / total_secundario * 100
+    df_sec_pct = df_sec_pct.sort_values("Weight (%)")
+    fig_barras_sec = px.bar(
+        df_sec_pct,
+        x="Weight (%)",
+        y="Ticker",
+        orientation="h",
+        title="Portfolio weight (%)",
+        text=df_sec_pct["Weight (%)"].apply(lambda x: f"{x:.1f}%"),
+    )
+    fig_barras_sec.update_traces(textposition="outside")
+    fig_barras_sec.update_layout(margin=dict(t=40, b=0, l=0, r=40), xaxis_title="", yaxis_title="")
+    st.plotly_chart(fig_barras_sec, use_container_width=True)
 
 st.caption("⚠️ Precios ARS hardcodeados · pendiente conexión a API de mercado")
