@@ -1,6 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
+import urllib3
+from datetime import datetime
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ---------------------------------------------------------------------------
 # Configuración de la página
@@ -39,6 +44,52 @@ portfolio_secundario = {
     "PBR":     50,
     "VALE":   263,
 }
+
+# ---------------------------------------------------------------------------
+# API dólar MEP
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=300)  # refresca cada 5 minutos
+def obtener_dolar_mep():
+    """
+    Obtiene el valor del dólar MEP intentando dos fuentes en orden:
+    1. Bluelytics  2. DolarAPI
+    Retorna (valor, hora, fuente) o (None, None, None) si ambas fallan.
+    """
+    fuentes = [
+        {
+            # Fuente primaria — tiene el dólar bolsa (MEP) real
+            "url":    "https://dolarapi.com/v1/dolares/bolsa",
+            "nombre": "DolarAPI",
+            "parsear": lambda d: (
+                d["venta"],
+                datetime.fromisoformat(d["fechaActualizacion"]).strftime("%d/%m/%Y %H:%M"),
+            ),
+        },
+        {
+            # Fuente secundaria — usa dólar blue como aproximación (Bluelytics no tiene MEP)
+            "url":    "https://api.bluelytics.com.ar/v2/latest",
+            "nombre": "Bluelytics (blue)",
+            "parsear": lambda d: (
+                d["blue"]["value_sell"],
+                datetime.fromisoformat(d["last_update"]).strftime("%d/%m/%Y %H:%M"),
+            ),
+        },
+    ]
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for fuente in fuentes:
+        try:
+            respuesta = requests.get(fuente["url"], timeout=5, verify=False, headers=headers)
+            respuesta.raise_for_status()
+            valor, hora = fuente["parsear"](respuesta.json())
+            return valor, hora, fuente["nombre"]
+        except Exception as e:
+            print(f"[DEBUG] Falló {fuente['nombre']}: {type(e).__name__}: {e}")
+            continue
+
+    return None, None, None
+
 
 # ---------------------------------------------------------------------------
 # Funciones
@@ -87,16 +138,23 @@ def colorear_bajo_valor(df: pd.DataFrame) -> pd.DataFrame:
 st.title("CEDEAR Control")
 st.caption("Seguimiento de portfolios · valores en USD MEP")
 
-# Ingreso del dólar MEP
+# Obtención del dólar MEP
+mep_api, mep_hora, mep_fuente = obtener_dolar_mep()
+
 col_mep, _ = st.columns([1, 3])
 with col_mep:
-    dolar_mep = st.number_input(
-        "Dólar MEP (ARS)",
-        min_value=1.0,
-        value=1_400.0,
-        step=10.0,
-        format="%.2f",
-    )
+    if mep_api:
+        st.success(f"Dólar MEP: **${mep_api:,.2f}** · {mep_hora} · Fuente: {mep_fuente}")
+        dolar_mep = mep_api
+    else:
+        st.warning("No se pudo obtener el dólar MEP desde ninguna fuente. Ingresalo manualmente.")
+        dolar_mep = st.number_input(
+            "Dólar MEP (ARS)",
+            min_value=1.0,
+            value=1_400.0,
+            step=10.0,
+            format="%.2f",
+        )
 
 if dolar_mep <= 0:
     st.error("Ingresá un valor válido para el dólar MEP.")
