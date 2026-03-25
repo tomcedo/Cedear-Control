@@ -1,4 +1,5 @@
 import json
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -6,6 +7,7 @@ import requests
 import urllib3
 from datetime import datetime
 from pathlib import Path
+from ppi_data import obtener_precios_ppi
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -48,10 +50,10 @@ ICONO_SECTOR = {
 # ---------------------------------------------------------------------------
 # Carga de portfolio: Streamlit Cloud (st.secrets) o local (portfolio.json)
 # ---------------------------------------------------------------------------
-if "portfolio" in st.secrets:
+try:
     # Streamlit Cloud: el portfolio viene como JSON string en secrets.toml
     _datos = json.loads(st.secrets["portfolio"]["data"])
-else:
+except Exception:
     # Local: leer desde portfolio.json
     _ruta_portfolio = Path(__file__).parent / "portfolio.json"
     if not _ruta_portfolio.exists():
@@ -63,9 +65,29 @@ else:
     with open(_ruta_portfolio, encoding="utf-8") as _f:
         _datos = json.load(_f)
 
-precios_ars          = _datos["precios_ars"]
+precios_ars_fallback = _datos["precios_ars"]
 portfolio_principal  = _datos["portfolio_principal"]
 portfolio_secundario = _datos["portfolio_secundario"]
+
+# ---------------------------------------------------------------------------
+# Precios en tiempo real desde PPI (con fallback a portfolio.json)
+# ---------------------------------------------------------------------------
+@st.cache_data(ttl=300)  # refresca cada 5 minutos
+def obtener_precios(tickers: tuple) -> tuple[dict, str]:
+    """Devuelve (precios_dict, fuente) donde fuente es 'PPI' o 'portfolio.json'."""
+    if os.environ.get("PPI_KEY_PUBLICA") and os.environ.get("PPI_KEY_PRIVADA"):
+        try:
+            precios = obtener_precios_ppi(list(tickers))
+            # Si volvieron todos los tickers, la llamada fue exitosa
+            if precios:
+                return precios, "PPI"
+        except Exception as e:
+            print(f"[PPI] Falló la obtención de precios: {e}")
+    return precios_ars_fallback, "portfolio.json"
+
+
+_todos_los_tickers = tuple(set(portfolio_principal) | set(portfolio_secundario))
+precios_ars, fuente_precios = obtener_precios(_todos_los_tickers)
 
 # ---------------------------------------------------------------------------
 # API dólar MEP
@@ -125,11 +147,11 @@ def semaforo(peso: float) -> str:
     return "⚪"  # posición marginal (<5%)
 
 
-def calcular_portfolio(posiciones: dict, dolar_mep: float) -> pd.DataFrame:
+def calcular_portfolio(posiciones: dict, dolar_mep: float, precios: dict) -> pd.DataFrame:
     """Convierte las posiciones a un DataFrame con valor en USD, sector, peso % y semáforo."""
     filas = []
     for ticker, cantidad in posiciones.items():
-        precio = precios_ars[ticker]
+        precio = precios.get(ticker, precios_ars_fallback.get(ticker, 0))
         valor_ars = precio * cantidad
         valor_usd = valor_ars / dolar_mep
         sector, _ = SECTORES.get(ticker, ("Otro", "#888888"))
@@ -263,8 +285,8 @@ if dolar_mep <= 0:
 # ---------------------------------------------------------------------------
 # Cálculo de portfolios
 # ---------------------------------------------------------------------------
-df_principal  = calcular_portfolio(portfolio_principal,  dolar_mep)
-df_secundario = calcular_portfolio(portfolio_secundario, dolar_mep)
+df_principal  = calcular_portfolio(portfolio_principal,  dolar_mep, precios_ars)
+df_secundario = calcular_portfolio(portfolio_secundario, dolar_mep, precios_ars)
 
 total_principal  = df_principal["Valor USD"].sum()
 total_secundario = df_secundario["Valor USD"].sum()
@@ -335,4 +357,7 @@ with col_r2:
     resumen_concentracion(df_secundario, "Portfolio Secundario")
 
 st.divider()
-st.caption("⚠️ Precios ARS hardcodeados · pendiente conexión a API de mercado")
+if fuente_precios == "PPI":
+    st.caption("Precios ARS obtenidos en tiempo real desde **PPI** · caché 5 min")
+else:
+    st.caption("⚠️ Precios ARS desde `portfolio.json` (fallback) · API de PPI no disponible")
