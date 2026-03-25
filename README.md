@@ -2,6 +2,7 @@
 
 Dashboard para seguimiento de portfolios de inversión en CEDEARs, con cálculo automático del valor en dólares MEP.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://cedear-control-mpp8i7vzq4k6fqxrjkbknc.streamlit.app/)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit&logoColor=white)
 
