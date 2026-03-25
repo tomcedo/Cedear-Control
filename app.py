@@ -213,14 +213,12 @@ def resumen_concentracion(df: pd.DataFrame, nombre: str) -> None:
 
 
 def grafico_torta(df: pd.DataFrame) -> None:
-    """Torta por ticker, coloreada según el sector de cada uno."""
-    color_por_ticker = df.set_index("Ticker")["Sector"].map(COLOR_SECTOR).to_dict()
+    """Torta por ticker, color distinto por cada acción."""
     fig = px.pie(
         df,
         names="Ticker",
         values="Valor USD",
-        color="Ticker",
-        color_discrete_map=color_por_ticker,
+        color_discrete_sequence=px.colors.qualitative.Plotly,
         hole=0.3,
     )
     fig.update_traces(
