@@ -1,0 +1,17 @@
+{
+  "_comentario": "Copiá este archivo como portfolio.json y reemplazá con tus datos reales",
+  "precios_ars": {
+    "AAPL":  18000,
+    "MSFT":  17000,
+    "GOOGL": 20000
+  },
+  "portfolio_principal": {
+    "AAPL":  100,
+    "MSFT":   50,
+    "GOOGL":  80
+  },
+  "portfolio_secundario": {
+    "MSFT":  30,
+    "GOOGL": 20
+  }
+}

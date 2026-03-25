@@ -38,5 +38,8 @@ secrets.toml
 .ipynb_checkpoints/
 *.ipynb
 
+# Portfolio personal (datos privados)
+portfolio.json
+
 # Logs
 *.log

@@ -1,60 +1,103 @@
 # CEDEAR Control
 
-Dashboard interactivo para el seguimiento de portfolios de inversión en CEDEARs, con valuación en dólares MEP en tiempo real.
+Dashboard para seguimiento de portfolios de inversión en CEDEARs, con cálculo automático del valor en dólares MEP.
 
-![Screenshot](screenshot.png)
-> *Captura de pantalla próximamente*
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?logo=streamlit&logoColor=white)
 
 ---
 
-## Características
+![Dashboard](docs/screenshot.png)
 
-- Valuación de posiciones en USD MEP: `(precio ARS × cantidad) / dólar MEP`
-- Dólar MEP obtenido automáticamente desde APIs públicas, con fallback a ingreso manual
-- Comparación lado a lado de dos portfolios
-- Gráficos de distribución por ticker (torta) y peso porcentual (barras)
-- Resaltado de posiciones con valor menor a USD 500
+---
 
-## Tecnologías
+## Funcionalidades
 
-| | |
+- **Dólar MEP automático** — obtiene la cotización en tiempo real desde múltiples fuentes (Bluelytics, DolarAPI) con fallback manual y caché de 5 minutos
+- **Dos portfolios simultáneos** — visualización lado a lado del portfolio principal y el secundario
+- **Valor USD por posición** — calcula `valor_usd = (precio_ars × cantidad) / dolar_mep` para cada CEDEAR
+- **Gráficos interactivos** — distribución porcentual por posición con Plotly
+- **Comparación de portfolios** — totales en ARS y USD de ambas carteras en una sola pantalla
+
+## Stack tecnológico
+
+| Tecnología | Uso |
 |---|---|
-| [Python 3](https://www.python.org/) | Lenguaje principal |
-| [Streamlit](https://streamlit.io/) | Framework del dashboard |
-| [Plotly Express](https://plotly.com/python/plotly-express/) | Gráficos interactivos |
-| [Requests](https://requests.readthedocs.io/) | Consumo de APIs |
-| [DolarAPI](https://dolarapi.com/) / [Bluelytics](https://bluelytics.com.ar/) | Fuentes del tipo de cambio MEP |
+| Python 3.10+ | Lenguaje base |
+| Streamlit | Interfaz web / dashboard |
+| Pandas | Manipulación de datos |
+| Plotly Express | Gráficos interactivos |
+| Requests | Consulta a APIs de cotización |
 
-## Instalación
-
-**Requisitos:** Python 3.8+
+## Instalación y uso local
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/tomcedo/Cedear-Control.git
-cd Cedear-Control
+# 1. Clonar el repositorio
+git clone https://github.com/tu-usuario/cedear-control.git
+cd cedear-control
 
-# Instalar dependencias
-pip install streamlit plotly requests
+# 2. Crear entorno virtual
+python -m venv .venv
+source .venv/bin/activate      # Linux/Mac
+.venv\Scripts\activate         # Windows
 
-# Correr el dashboard
+# 3. Instalar dependencias
+pip install streamlit pandas plotly requests
+
+# 4. Configurar el portfolio (ver sección siguiente)
+
+# 5. Ejecutar
 streamlit run app.py
 ```
 
 El dashboard queda disponible en `http://localhost:8501`.
 
-## Estructura
+## Configurar el portfolio
 
-```
-cedear-control/
-├── app.py        # Aplicación principal
-└── CLAUDE.md     # Guía para Claude Code
+Los datos personales (posiciones y precios) **no se suben a GitHub**. El archivo `portfolio.json` está en `.gitignore`.
+
+```bash
+cp portfolio.example.json portfolio.json
 ```
 
----
+Luego editá `portfolio.json` con tus CEDEARs, cantidades y precios en ARS:
+
+```json
+{
+  "precios_ars": {
+    "AAPL": 18000,
+    "MSFT": 17000
+  },
+  "portfolio_principal": {
+    "AAPL": 100,
+    "MSFT": 50
+  },
+  "portfolio_secundario": {
+    "MSFT": 30
+  }
+}
+```
+
+> `portfolio.example.json` se incluye en el repositorio como plantilla con datos ficticios.
 
 ## Construido con Claude Code
 
-Este proyecto fue desarrollado de forma asistida usando [Claude Code](https://claude.ai/code), el agente de programación de Anthropic que opera directamente en la terminal.
+Este proyecto fue desarrollado de forma iterativa usando [Claude Code](https://claude.ai/code), el CLI de Anthropic para tareas de ingeniería de software. El proceso incluyó:
 
-Claude Code fue usado para generar la estructura inicial del dashboard, integrar las APIs de tipo de cambio, diseñar los gráficos, resolver problemas de conectividad SSL en Windows, y mantener el historial de commits a lo largo del desarrollo.
+1. **Diseño inicial** del dashboard en Streamlit con datos estáticos
+2. **Integración del dólar MEP** con múltiples fuentes y lógica de fallback
+3. **Exploración de APIs** de brokers argentinos (PPI, IOL) para precios en tiempo real
+4. **Refinamiento** del layout, gráficos y fórmulas de cálculo
+
+Claude Code permitió avanzar rápidamente sobre decisiones de arquitectura, depurar integraciones con APIs externas y mantener el código limpio en cada iteración.
+
+## Próximas mejoras
+
+- [ ] **Precios en tiempo real vía API PPI** — reemplazar los precios hardcodeados por cotizaciones en vivo desde la API de Portfolio Personal Inversiones
+- [ ] **Historial de valuación** — guardar snapshots diarios para ver la evolución del portfolio en el tiempo
+- [ ] **Alertas de precio** — notificación cuando un CEDEAR supere o baje de un umbral definido
+- [ ] **Exportación a CSV/Excel** — descargar el estado actual del portfolio
+
+---
+
+> Los portfolios y cantidades reflejan posiciones reales. No modificar sin consultar primero.

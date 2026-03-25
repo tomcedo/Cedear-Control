@@ -1,49 +1,67 @@
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
 import urllib3
 from datetime import datetime
+from pathlib import Path
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ---------------------------------------------------------------------------
 # Configuración de la página
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="CEDEAR Control", layout="wide")
+st.set_page_config(page_title="Portfolio Dashboard", page_icon="📈", layout="wide")
 
 # ---------------------------------------------------------------------------
-# Datos hardcodeados — precios en ARS (se reemplazarán por API)
+# Sectores y colores
 # ---------------------------------------------------------------------------
-precios_ars = {
-    "AMZN":  22_500,
-    "BBD":     310,
-    "GOOGL": 20_800,
-    "MSFT":  17_200,
-    "NU":     7_450,
-    "NVDA":  46_000,
-    "PBR":    1_850,
-    "VALE":   1_620,
-    "XOM":   11_400,
+SECTORES = {
+    "AMZN":  ("Tech",        "#4C9BE8"),
+    "GOOGL": ("Tech",        "#4C9BE8"),
+    "MSFT":  ("Tech",        "#4C9BE8"),
+    "NVDA":  ("Tech",        "#4C9BE8"),
+    "XOM":   ("Energía",     "#E8834C"),
+    "PBR":   ("Energía",     "#E8834C"),
+    "BBD":   ("Financiero",  "#4CAF7D"),
+    "NU":    ("Financiero",  "#4CAF7D"),
+    "VALE":  ("Materiales",  "#9B59B6"),
 }
 
-portfolio_principal = {
-    "AMZN":  1249,
-    "BBD":    633,
-    "GOOGL":  619,
-    "MSFT":   126,
-    "NU":     506,
-    "NVDA":   624,
-    "PBR":    110,
-    "XOM":     66,
+COLOR_SECTOR = {
+    "Tech":       "#4C9BE8",
+    "Energía":    "#E8834C",
+    "Financiero": "#4CAF7D",
+    "Materiales": "#9B59B6",
+    "Otro":       "#888888",
 }
 
-portfolio_secundario = {
-    "NU":     402,
-    "NVDA":   139,
-    "PBR":     50,
-    "VALE":   263,
+ICONO_SECTOR = {
+    "Tech":       "💻",
+    "Energía":    "⚡",
+    "Financiero": "🏦",
+    "Materiales": "⛏️",
+    "Otro":       "📊",
 }
+
+# ---------------------------------------------------------------------------
+# Carga de portfolio desde archivo externo
+# ---------------------------------------------------------------------------
+_ruta_portfolio = Path(__file__).parent / "portfolio.json"
+if not _ruta_portfolio.exists():
+    st.error(
+        "No se encontró `portfolio.json`. "
+        "Copiá `portfolio.example.json` como `portfolio.json` y completá con tus datos."
+    )
+    st.stop()
+
+with open(_ruta_portfolio, encoding="utf-8") as _f:
+    _datos = json.load(_f)
+
+precios_ars          = _datos["precios_ars"]
+portfolio_principal  = _datos["portfolio_principal"]
+portfolio_secundario = _datos["portfolio_secundario"]
 
 # ---------------------------------------------------------------------------
 # API dólar MEP
@@ -52,12 +70,11 @@ portfolio_secundario = {
 def obtener_dolar_mep():
     """
     Obtiene el valor del dólar MEP intentando dos fuentes en orden:
-    1. Bluelytics  2. DolarAPI
+    1. DolarAPI  2. Bluelytics
     Retorna (valor, hora, fuente) o (None, None, None) si ambas fallan.
     """
     fuentes = [
         {
-            # Fuente primaria — tiene el dólar bolsa (MEP) real
             "url":    "https://dolarapi.com/v1/dolares/bolsa",
             "nombre": "DolarAPI",
             "parsear": lambda d: (
@@ -66,7 +83,6 @@ def obtener_dolar_mep():
             ),
         },
         {
-            # Fuente secundaria — usa dólar blue como aproximación (Bluelytics no tiene MEP)
             "url":    "https://api.bluelytics.com.ar/v2/latest",
             "nombre": "Bluelytics (blue)",
             "parsear": lambda d: (
@@ -94,152 +110,221 @@ def obtener_dolar_mep():
 # ---------------------------------------------------------------------------
 # Funciones
 # ---------------------------------------------------------------------------
+def semaforo(peso: float) -> str:
+    """Devuelve un emoji semáforo según el peso porcentual del ticker."""
+    if peso > 35:
+        return "🔴"
+    if peso > 20:
+        return "🟡"
+    if peso >= 5:
+        return "🟢"
+    return "⚪"  # posición marginal (<5%)
+
+
 def calcular_portfolio(posiciones: dict, dolar_mep: float) -> pd.DataFrame:
-    """Convierte las posiciones a un DataFrame con el valor en USD de cada una."""
+    """Convierte las posiciones a un DataFrame con valor en USD, sector, peso % y semáforo."""
     filas = []
     for ticker, cantidad in posiciones.items():
         precio = precios_ars[ticker]
         valor_ars = precio * cantidad
         valor_usd = valor_ars / dolar_mep
+        sector, _ = SECTORES.get(ticker, ("Otro", "#888888"))
         filas.append({
-            "Ticker":      ticker,
-            "Cantidad":    cantidad,
-            "Precio ARS":  precio,
-            "Valor ARS":   valor_ars,
-            "Valor USD":   valor_usd,
+            "Ticker":     ticker,
+            "Sector":     sector,
+            "Cantidad":   cantidad,
+            "Precio ARS": precio,
+            "Valor ARS":  valor_ars,
+            "Valor USD":  valor_usd,
         })
-    return pd.DataFrame(filas)
-
-
-def formatear_tabla(df: pd.DataFrame) -> pd.DataFrame:
-    """Aplica formato legible a las columnas numéricas."""
-    df = df.copy()
-    df["Cantidad"]   = df["Cantidad"].apply(lambda x: f"{x:,}")
-    df["Precio ARS"] = df["Precio ARS"].apply(lambda x: f"${x:,.0f}")
-    df["Valor ARS"]  = df["Valor ARS"].apply(lambda x: f"${x:,.0f}")
-    df["Valor USD"]  = df["Valor USD"].apply(lambda x: f"${x:,.2f}")
+    df = pd.DataFrame(filas)
+    df["Peso %"] = df["Valor USD"] / df["Valor USD"].sum() * 100
+    df["Estado"] = df["Peso %"].map(semaforo)
     return df
 
 
-def colorear_bajo_valor(df: pd.DataFrame) -> pd.DataFrame:
-    """Resalta en rojo las filas cuyo Valor USD es menor a $500."""
-    def estilo_fila(fila):
-        # Convertir string formateado a float para comparar
-        valor = float(fila["Valor USD"].replace("$", "").replace(",", ""))
-        color = "color: #e05c5c" if valor < 500 else ""
-        return [color] * len(fila)
+def renderizar_tabla(df: pd.DataFrame) -> None:
+    """
+    Muestra el DataFrame con column_config de Streamlit:
+    sector con icono, barra de progreso para Peso %, formato de moneda.
+    """
+    df_display = df.copy()
+    df_display["Sector"] = df_display["Sector"].map(
+        lambda s: f"{ICONO_SECTOR.get(s, '')} {s}"
+    )
 
-    return df.style.apply(estilo_fila, axis=1)
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True,
+        column_order=["Estado", "Ticker", "Sector", "Cantidad", "Precio ARS", "Valor ARS", "Valor USD", "Peso %"],
+        column_config={
+            "Estado":     st.column_config.TextColumn("",           width="small"),
+            "Ticker":     st.column_config.TextColumn("Ticker",     width="small"),
+            "Sector":     st.column_config.TextColumn("Sector",     width="medium"),
+            "Cantidad":   st.column_config.NumberColumn("Cantidad", format="%d"),
+            "Precio ARS": st.column_config.NumberColumn("Precio ARS", format="$%,.0f"),
+            "Valor ARS":  st.column_config.NumberColumn("Valor ARS",  format="$%,.0f"),
+            "Valor USD":  st.column_config.NumberColumn("Valor USD",  format="$%,.2f"),
+            "Peso %":     st.column_config.ProgressColumn(
+                "Peso %",
+                format="%.1f%%",
+                min_value=0,
+                max_value=100,
+            ),
+        },
+    )
+
+
+def resumen_concentracion(df: pd.DataFrame, nombre: str) -> None:
+    """Analiza el portfolio y muestra alertas de concentración por ticker y por sector."""
+    rojos    = df[df["Peso %"] > 35]["Ticker"].tolist()
+    amarillos = df[(df["Peso %"] > 20) & (df["Peso %"] <= 35)]["Ticker"].tolist()
+
+    por_sector = df.groupby("Sector")["Peso %"].sum()
+    sectores_criticos  = por_sector[por_sector > 60].index.tolist()
+    sectores_altos     = por_sector[(por_sector > 40) & (por_sector <= 60)].index.tolist()
+
+    sin_problemas = not rojos and not amarillos and not sectores_criticos and not sectores_altos
+
+    st.markdown(f"**{nombre}**")
+
+    if sin_problemas:
+        st.success("🟢 Bien diversificado. Ningún ticker supera el 20% ni ningún sector el 40%.")
+        return
+
+    for ticker in rojos:
+        peso = df.loc[df["Ticker"] == ticker, "Peso %"].iloc[0]
+        st.error(f"🔴 **{ticker}** representa el {peso:.1f}% — concentración crítica (>35%).")
+
+    for ticker in amarillos:
+        peso = df.loc[df["Ticker"] == ticker, "Peso %"].iloc[0]
+        st.warning(f"🟡 **{ticker}** representa el {peso:.1f}% — concentración moderada (20–35%).")
+
+    for sector in sectores_criticos:
+        st.error(f"🔴 Sector **{sector}**: {por_sector[sector]:.1f}% del portfolio — exposición sectorial crítica (>60%).")
+
+    for sector in sectores_altos:
+        st.warning(f"🟡 Sector **{sector}**: {por_sector[sector]:.1f}% del portfolio — exposición sectorial alta (40–60%).")
+
+
+def grafico_sector(df: pd.DataFrame, titulo: str) -> None:
+    """Barras horizontales ordenadas por valor, coloreadas por sector."""
+    df_plot = df.sort_values("Valor USD")
+    fig = px.bar(
+        df_plot,
+        x="Valor USD",
+        y="Ticker",
+        orientation="h",
+        title=titulo,
+        text=df_plot["Peso %"].apply(lambda x: f"{x:.1f}%"),
+        color="Sector",
+        color_discrete_map=COLOR_SECTOR,
+    )
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        margin=dict(t=40, b=0, l=0, r=60),
+        xaxis_title="",
+        yaxis_title="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
-# Interfaz
+# Obtención del dólar MEP + variación por sesión
 # ---------------------------------------------------------------------------
-st.title("CEDEAR Control")
-st.caption("Seguimiento de portfolios · valores en USD MEP")
-
-# Obtención del dólar MEP
 mep_api, mep_hora, mep_fuente = obtener_dolar_mep()
 
-col_mep, _ = st.columns([1, 3])
-with col_mep:
-    if mep_api:
-        st.success(f"Dólar MEP: **${mep_api:,.2f}** · {mep_hora} · Fuente: {mep_fuente}")
-        dolar_mep = mep_api
+mep_delta = None
+if mep_api:
+    if "mep_previo" not in st.session_state:
+        st.session_state.mep_previo = mep_api
     else:
-        st.warning("No se pudo obtener el dólar MEP desde ninguna fuente. Ingresalo manualmente.")
-        dolar_mep = st.number_input(
-            "Dólar MEP (ARS)",
-            min_value=1.0,
-            value=1_400.0,
-            step=10.0,
-            format="%.2f",
-        )
+        delta = mep_api - st.session_state.mep_previo
+        mep_delta = f"{delta:+.2f}" if delta != 0 else None
+        st.session_state.mep_previo = mep_api
+    dolar_mep = mep_api
+else:
+    st.warning("No se pudo obtener el dólar MEP desde ninguna fuente. Ingresalo manualmente.")
+    dolar_mep = st.number_input(
+        "Dólar MEP (ARS)",
+        min_value=1.0,
+        value=1_400.0,
+        step=10.0,
+        format="%.2f",
+    )
 
 if dolar_mep <= 0:
     st.error("Ingresá un valor válido para el dólar MEP.")
     st.stop()
 
-st.divider()
-
-# Cálculo de ambos portfolios
-df_principal   = calcular_portfolio(portfolio_principal,   dolar_mep)
-df_secundario  = calcular_portfolio(portfolio_secundario,  dolar_mep)
+# ---------------------------------------------------------------------------
+# Cálculo de portfolios
+# ---------------------------------------------------------------------------
+df_principal  = calcular_portfolio(portfolio_principal,  dolar_mep)
+df_secundario = calcular_portfolio(portfolio_secundario, dolar_mep)
 
 total_principal  = df_principal["Valor USD"].sum()
 total_secundario = df_secundario["Valor USD"].sum()
 total_combinado  = total_principal + total_secundario
 
-# Métrica principal destacada
-st.metric("💼 Total combinado USD", f"${total_combinado:,.2f}")
+# ---------------------------------------------------------------------------
+# Header: título + 4 métricas destacadas
+# ---------------------------------------------------------------------------
+st.title("📈 Portfolio Dashboard")
+
+col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+
+with col_m1:
+    st.metric("💼 Total Combinado", f"${total_combinado:,.0f} USD")
+with col_m2:
+    pct_principal = total_principal / total_combinado * 100
+    st.metric("Portfolio Principal", f"${total_principal:,.0f} USD", f"{pct_principal:.1f}% del total")
+with col_m3:
+    pct_secundario = total_secundario / total_combinado * 100
+    st.metric("Portfolio Secundario", f"${total_secundario:,.0f} USD", f"{pct_secundario:.1f}% del total")
+with col_m4:
+    if mep_api:
+        st.metric(
+            f"USD MEP · {mep_fuente}",
+            f"${mep_api:,.2f}",
+            delta=mep_delta,
+            help=f"Actualizado: {mep_hora} · caché 5 min",
+        )
+    else:
+        st.metric("USD MEP (manual)", f"${dolar_mep:,.2f}")
 
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Visualización en dos columnas
+# Portfolios en dos columnas
 # ---------------------------------------------------------------------------
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Portfolio Principal")
-    st.dataframe(
-        colorear_bajo_valor(formatear_tabla(df_principal)),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.metric("Total USD", f"${total_principal:,.2f}")
-
-    # Gráfico de distribución por ticker
-    fig_torta = px.pie(
-        df_principal,
-        names="Ticker",
-        values="Valor USD",
-        title="Distribution by ticker (USD)",
-        hole=0.3,
-    )
-    fig_torta.update_traces(textinfo="percent+label")
-    fig_torta.update_layout(showlegend=False, margin=dict(t=40, b=0, l=0, r=0))
-    st.plotly_chart(fig_torta, use_container_width=True)
-
-    # Gráfico de barras horizontal — peso porcentual
-    df_ppal_pct = df_principal.copy()
-    df_ppal_pct["Weight (%)"] = df_ppal_pct["Valor USD"] / total_principal * 100
-    df_ppal_pct = df_ppal_pct.sort_values("Weight (%)")
-    fig_barras_ppal = px.bar(
-        df_ppal_pct,
-        x="Weight (%)",
-        y="Ticker",
-        orientation="h",
-        title="Portfolio weight (%)",
-        text=df_ppal_pct["Weight (%)"].apply(lambda x: f"{x:.1f}%"),
-    )
-    fig_barras_ppal.update_traces(textposition="outside")
-    fig_barras_ppal.update_layout(margin=dict(t=40, b=0, l=0, r=40), xaxis_title="", yaxis_title="")
-    st.plotly_chart(fig_barras_ppal, use_container_width=True)
+    renderizar_tabla(df_principal)
+    grafico_sector(df_principal, "Distribución por ticker")
 
 with col2:
     st.subheader("Portfolio Secundario")
-    st.dataframe(
-        colorear_bajo_valor(formatear_tabla(df_secundario)),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.metric("Total USD", f"${total_secundario:,.2f}")
+    renderizar_tabla(df_secundario)
+    grafico_sector(df_secundario, "Distribución por ticker")
 
-    # Gráfico de barras horizontal — peso porcentual
-    df_sec_pct = df_secundario.copy()
-    df_sec_pct["Weight (%)"] = df_sec_pct["Valor USD"] / total_secundario * 100
-    df_sec_pct = df_sec_pct.sort_values("Weight (%)")
-    fig_barras_sec = px.bar(
-        df_sec_pct,
-        x="Weight (%)",
-        y="Ticker",
-        orientation="h",
-        title="Portfolio weight (%)",
-        text=df_sec_pct["Weight (%)"].apply(lambda x: f"{x:.1f}%"),
-    )
-    fig_barras_sec.update_traces(textposition="outside")
-    fig_barras_sec.update_layout(margin=dict(t=40, b=0, l=0, r=40), xaxis_title="", yaxis_title="")
-    st.plotly_chart(fig_barras_sec, use_container_width=True)
+st.divider()
 
+# ---------------------------------------------------------------------------
+# Resumen de concentración
+# ---------------------------------------------------------------------------
+st.subheader("Resumen de concentración")
+st.caption("🟢 Saludable (5–20%) · 🟡 Moderado (20–35%) · 🔴 Crítico (+35%) · ⚪ Marginal (<5%)")
+
+col_r1, col_r2 = st.columns(2)
+with col_r1:
+    resumen_concentracion(df_principal, "Portfolio Principal")
+with col_r2:
+    resumen_concentracion(df_secundario, "Portfolio Secundario")
+
+st.divider()
 st.caption("⚠️ Precios ARS hardcodeados · pendiente conexión a API de mercado")
