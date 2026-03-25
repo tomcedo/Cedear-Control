@@ -98,7 +98,3 @@ Claude Code permitió avanzar rápidamente sobre decisiones de arquitectura, dep
 - [ ] **Historial de valuación** — guardar snapshots diarios para ver la evolución del portfolio en el tiempo
 - [ ] **Alertas de precio** — notificación cuando un CEDEAR supere o baje de un umbral definido
 - [ ] **Exportación a CSV/Excel** — descargar el estado actual del portfolio
-
----
-
-> Los portfolios y cantidades reflejan posiciones reales. No modificar sin consultar primero.
