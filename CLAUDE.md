@@ -24,10 +24,8 @@ El dólar MEP se obtiene dinámicamente (ver scripts de referencia en `prueba-cl
 
 ## Portfolios
 
-**Principal:** AMZN 1249, BBD 633, GOOGL 619, MSFT 126, NU 506, NVDA 624, PBR 110, XOM 66
-**Secundario:** NU 402, NVDA 139, PBR 50, VALE 263
-
-No modificar estas cantidades sin consultar primero.
+Los datos de portfolio se leen desde portfolio.json (no incluido en el repo).
+Ver portfolio.example.json para el formato esperado.
 
 ## Convenciones
 
