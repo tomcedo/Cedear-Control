@@ -360,4 +360,4 @@ st.divider()
 if fuente_precios == "PPI":
     st.caption("Precios ARS obtenidos en tiempo real desde **PPI** · caché 5 min")
 else:
-    st.caption("⚠️ Precios ARS desde `portfolio.json` (fallback) · API de PPI no disponible")
+    st.caption("⚠️ Precios de demostración · Conectá tus credenciales PPI para precios en tiempo real")
