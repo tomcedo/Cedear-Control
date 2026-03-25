@@ -46,18 +46,22 @@ ICONO_SECTOR = {
 }
 
 # ---------------------------------------------------------------------------
-# Carga de portfolio desde archivo externo
+# Carga de portfolio: Streamlit Cloud (st.secrets) o local (portfolio.json)
 # ---------------------------------------------------------------------------
-_ruta_portfolio = Path(__file__).parent / "portfolio.json"
-if not _ruta_portfolio.exists():
-    st.error(
-        "No se encontró `portfolio.json`. "
-        "Copiá `portfolio.example.json` como `portfolio.json` y completá con tus datos."
-    )
-    st.stop()
-
-with open(_ruta_portfolio, encoding="utf-8") as _f:
-    _datos = json.load(_f)
+if "portfolio" in st.secrets:
+    # Streamlit Cloud: el portfolio viene como JSON string en secrets.toml
+    _datos = json.loads(st.secrets["portfolio"]["data"])
+else:
+    # Local: leer desde portfolio.json
+    _ruta_portfolio = Path(__file__).parent / "portfolio.json"
+    if not _ruta_portfolio.exists():
+        st.error(
+            "No se encontró `portfolio.json`. "
+            "Copiá `portfolio.example.json` como `portfolio.json` y completá con tus datos."
+        )
+        st.stop()
+    with open(_ruta_portfolio, encoding="utf-8") as _f:
+        _datos = json.load(_f)
 
 precios_ars          = _datos["precios_ars"]
 portfolio_principal  = _datos["portfolio_principal"]
