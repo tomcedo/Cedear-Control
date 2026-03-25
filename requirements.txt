@@ -4,3 +4,4 @@ plotly==6.6.0
 requests==2.32.5
 urllib3==2.5.0
 ppi-client==1.2.4
+yfinance==1.2.0

@@ -7,7 +7,7 @@ import requests
 import urllib3
 from datetime import datetime
 from pathlib import Path
-from ppi_data import obtener_precios_ppi
+from ppi_data import obtener_datos_ppi, obtener_variaciones_yahoo
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -73,21 +73,26 @@ portfolio_secundario = _datos["portfolio_secundario"]
 # Precios en tiempo real desde PPI (con fallback a portfolio.json)
 # ---------------------------------------------------------------------------
 @st.cache_data(ttl=300)  # refresca cada 5 minutos
-def obtener_precios(tickers: tuple) -> tuple[dict, str]:
-    """Devuelve (precios_dict, fuente) donde fuente es 'PPI' o 'portfolio.json'."""
+def obtener_precios(tickers: tuple) -> tuple[dict, str, dict]:
+    """Devuelve (precios, fuente, variaciones). Fuente: 'PPI' o 'portfolio.json'."""
     if os.environ.get("PPI_KEY_PUBLICA") and os.environ.get("PPI_KEY_PRIVADA"):
         try:
-            precios = obtener_precios_ppi(list(tickers))
-            # Si volvieron todos los tickers, la llamada fue exitosa
+            precios, variaciones = obtener_datos_ppi(list(tickers))
             if precios:
-                return precios, "PPI"
+                return precios, "PPI", variaciones
         except Exception as e:
             print(f"[PPI] Falló la obtención de precios: {e}")
-    return precios_ars_fallback, "portfolio.json"
+    # Fallback: precios del JSON + variaciones desde Yahoo
+    variaciones = {}
+    try:
+        variaciones = obtener_variaciones_yahoo(list(tickers))
+    except Exception as e:
+        print(f"[Yahoo] Falló la obtención de variaciones: {e}")
+    return precios_ars_fallback, "portfolio.json", variaciones
 
 
 _todos_los_tickers = tuple(set(portfolio_principal) | set(portfolio_secundario))
-precios_ars, fuente_precios = obtener_precios(_todos_los_tickers)
+precios_ars, fuente_precios, variaciones_diarias = obtener_precios(_todos_los_tickers)
 
 # ---------------------------------------------------------------------------
 # API dólar MEP
@@ -147,7 +152,7 @@ def semaforo(peso: float) -> str:
     return "⚪"  # posición marginal (<5%)
 
 
-def calcular_portfolio(posiciones: dict, dolar_mep: float, precios: dict) -> pd.DataFrame:
+def calcular_portfolio(posiciones: dict, dolar_mep: float, precios: dict, variaciones: dict) -> pd.DataFrame:
     """Convierte las posiciones a un DataFrame con valor en USD, sector, peso % y semáforo."""
     filas = []
     for ticker, cantidad in posiciones.items():
@@ -156,12 +161,13 @@ def calcular_portfolio(posiciones: dict, dolar_mep: float, precios: dict) -> pd.
         valor_usd = valor_ars / dolar_mep
         sector, _ = SECTORES.get(ticker, ("Otro", "#888888"))
         filas.append({
-            "Ticker":     ticker,
-            "Sector":     sector,
-            "Cantidad":   cantidad,
-            "Precio ARS": precio,
-            "Valor ARS":  valor_ars,
-            "Valor USD":  valor_usd,
+            "Ticker":      ticker,
+            "Sector":      sector,
+            "Cantidad":    cantidad,
+            "Precio ARS":  precio,
+            "Valor ARS":   valor_ars,
+            "Valor USD":   valor_usd,
+            "Var. diaria": variaciones.get(ticker),
         })
     df = pd.DataFrame(filas)
     df["Peso %"] = df["Valor USD"] / df["Valor USD"].sum() * 100
@@ -169,30 +175,53 @@ def calcular_portfolio(posiciones: dict, dolar_mep: float, precios: dict) -> pd.
     return df
 
 
+def _fmt_variacion(v) -> str:
+    """Formatea la variación diaria como '↑ 1.23%', '↓ 0.45%' o '-'."""
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return "-"
+    if v > 0:
+        return f"↑ {v:.2f}%"
+    if v < 0:
+        return f"↓ {abs(v):.2f}%"
+    return "0.00%"
+
+
 def renderizar_tabla(df: pd.DataFrame) -> None:
     """
     Muestra el DataFrame con column_config de Streamlit:
-    sector con icono, barra de progreso para Peso %, formato de moneda.
+    sector con icono, barra de progreso para Peso %, formato de moneda,
+    y variación diaria coloreada (↑ verde / ↓ rojo).
     """
     df_display = df.copy()
     df_display["Sector"] = df_display["Sector"].map(
         lambda s: f"{ICONO_SECTOR.get(s, '')} {s}"
     )
+    df_display["Var. diaria"] = df_display["Var. diaria"].map(_fmt_variacion)
+
+    def _color_var(val):
+        if isinstance(val, str) and val.startswith("↑"):
+            return "color: #2ecc71"
+        if isinstance(val, str) and val.startswith("↓"):
+            return "color: #e74c3c"
+        return ""
+
+    styled = df_display.style.map(_color_var, subset=["Var. diaria"])
 
     st.dataframe(
-        df_display,
+        styled,
         use_container_width=True,
         hide_index=True,
-        column_order=["Estado", "Ticker", "Sector", "Cantidad", "Precio ARS", "Valor ARS", "Valor USD", "Peso %"],
+        column_order=["Estado", "Ticker", "Sector", "Cantidad", "Precio ARS", "Valor ARS", "Valor USD", "Var. diaria", "Peso %"],
         column_config={
-            "Estado":     st.column_config.TextColumn("",           width="small"),
-            "Ticker":     st.column_config.TextColumn("Ticker",     width="small"),
-            "Sector":     st.column_config.TextColumn("Sector",     width="medium"),
-            "Cantidad":   st.column_config.NumberColumn("Cantidad", format="%d"),
-            "Precio ARS": st.column_config.NumberColumn("Precio ARS", format="$%,.0f"),
-            "Valor ARS":  st.column_config.NumberColumn("Valor ARS",  format="$%,.0f"),
-            "Valor USD":  st.column_config.NumberColumn("Valor USD",  format="$%,.2f"),
-            "Peso %":     st.column_config.ProgressColumn(
+            "Estado":      st.column_config.TextColumn("",             width="small"),
+            "Ticker":      st.column_config.TextColumn("Ticker",       width="small"),
+            "Sector":      st.column_config.TextColumn("Sector",       width="medium"),
+            "Cantidad":    st.column_config.NumberColumn("Cantidad",   format="%d"),
+            "Precio ARS":  st.column_config.NumberColumn("Precio ARS", format="$%,.0f"),
+            "Valor ARS":   st.column_config.NumberColumn("Valor ARS",  format="$%,.0f"),
+            "Valor USD":   st.column_config.NumberColumn("Valor USD",  format="$%,.2f"),
+            "Var. diaria": st.column_config.TextColumn("Var. diaria",  width="small"),
+            "Peso %":      st.column_config.ProgressColumn(
                 "Peso %",
                 format="%.1f%%",
                 min_value=0,
@@ -285,8 +314,8 @@ if dolar_mep <= 0:
 # ---------------------------------------------------------------------------
 # Cálculo de portfolios
 # ---------------------------------------------------------------------------
-df_principal  = calcular_portfolio(portfolio_principal,  dolar_mep, precios_ars)
-df_secundario = calcular_portfolio(portfolio_secundario, dolar_mep, precios_ars)
+df_principal  = calcular_portfolio(portfolio_principal,  dolar_mep, precios_ars, variaciones_diarias)
+df_secundario = calcular_portfolio(portfolio_secundario, dolar_mep, precios_ars, variaciones_diarias)
 
 total_principal  = df_principal["Valor USD"].sum()
 total_secundario = df_secundario["Valor USD"].sum()
