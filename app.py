@@ -212,25 +212,24 @@ def resumen_concentracion(df: pd.DataFrame, nombre: str) -> None:
         st.warning(f"🟡 Sector **{sector}**: {por_sector[sector]:.1f}% del portfolio — exposición sectorial alta (40–60%).")
 
 
-def grafico_sector(df: pd.DataFrame, titulo: str) -> None:
-    """Barras horizontales ordenadas por valor, coloreadas por sector."""
-    df_plot = df.sort_values("Valor USD")
-    fig = px.bar(
-        df_plot,
-        x="Valor USD",
-        y="Ticker",
-        orientation="h",
-        title=titulo,
-        text=df_plot["Peso %"].apply(lambda x: f"{x:.1f}%"),
-        color="Sector",
-        color_discrete_map=COLOR_SECTOR,
+def grafico_torta(df: pd.DataFrame) -> None:
+    """Torta por ticker, coloreada según el sector de cada uno."""
+    color_por_ticker = df.set_index("Ticker")["Sector"].map(COLOR_SECTOR).to_dict()
+    fig = px.pie(
+        df,
+        names="Ticker",
+        values="Valor USD",
+        color="Ticker",
+        color_discrete_map=color_por_ticker,
+        hole=0.3,
     )
-    fig.update_traces(textposition="outside")
+    fig.update_traces(
+        textinfo="percent+label",
+        hovertemplate="<b>%{label}</b><br>%{percent}<br>$%{value:,.0f} USD<extra></extra>",
+    )
     fig.update_layout(
-        margin=dict(t=40, b=0, l=0, r=60),
-        xaxis_title="",
-        yaxis_title="",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        showlegend=False,
+        margin=dict(t=10, b=10, l=10, r=10),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -302,19 +301,26 @@ with col_m4:
 st.divider()
 
 # ---------------------------------------------------------------------------
-# Portfolios en dos columnas
+# Portfolio Principal — fila completa
 # ---------------------------------------------------------------------------
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Portfolio Principal")
+st.subheader("Portfolio Principal")
+col_t1, col_g1 = st.columns([7, 3])
+with col_t1:
     renderizar_tabla(df_principal)
-    grafico_sector(df_principal, "Distribución por ticker")
+with col_g1:
+    grafico_torta(df_principal)
 
-with col2:
-    st.subheader("Portfolio Secundario")
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Portfolio Secundario — fila completa
+# ---------------------------------------------------------------------------
+st.subheader("Portfolio Secundario")
+col_t2, col_g2 = st.columns([7, 3])
+with col_t2:
     renderizar_tabla(df_secundario)
-    grafico_sector(df_secundario, "Distribución por ticker")
+with col_g2:
+    grafico_torta(df_secundario)
 
 st.divider()
 
